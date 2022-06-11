@@ -1,7 +1,6 @@
 #Pygame Test 2
 #Originaly made on: 4-6-2022
 
-import re
 from time import time
 from traceback import format_exc as tb_format_exc
 
@@ -28,7 +27,7 @@ class Game:
 
         pygame.display.set_caption("Pygame Test 2")
         pygame.mouse.set_visible(False)
-        pygame.display.set_mode(self.RESOLUTION, pl.RESIZABLE|pl.DOUBLEBUF|pl.HWSURFACE)
+        pygame.display.set_mode(self.RESOLUTION, pl.DOUBLEBUF|pl.HWSURFACE)
 
         self.screen = pygame.display.get_surface()
         self.screen_center = {"x":self.screen.get_width()/2, "y":self.screen.get_height()/2}  
@@ -60,7 +59,11 @@ class Game:
         dt = (now - self.prev_time) * self.TARGET_FPS
         self.prev_time = now        
         return dt
-            
+
+    #Track Mouse Holding
+    def mouse_holding(self):
+        return time() - self.cursor["HOLD_TIME"] if self.cursor["HOLD"] else self.cursor["HOLD_TIME"]
+           
     #Text Display Function
     def text(self, text, x, y, size=20, color=(255,255,255), center=False):
         font = pygame.font.Font(None, size)
@@ -91,6 +94,17 @@ class Game:
         elif direction == "RIGHT":
             surface.x += speed*self.dtime
     
+    #Toggle Game FPS
+    def toggle_fps(self):
+        if self.FPS == 60:
+            self.FPS = 30
+        elif self.FPS == 30:
+            self.FPS = 20
+        elif self.FPS == 20:
+            self.FPS = 10
+        elif self.FPS == 10:
+            self.FPS = 60
+    
     #Surface Class
     class Surface:
         def __init__(self, screen, size:tuple, startpos=(0,0), color=(0,0,0)):
@@ -105,7 +119,7 @@ class Game:
             
             self.surface = pygame.Surface((self.width, self.height))
             self.surface.fill(color)
-            
+                        
             #First Update
             self.update(self.startpos)
 
@@ -120,17 +134,58 @@ class Game:
                 
     #Keybind Class
     class Keybind:
-        def __init__(self, key, function, args=None):
+        def __init__(self, key, function:callable, args:tuple=(), kwargs:dict=None):
+            if kwargs is None:
+                kwargs = {}
             self.key = key
             self.function = function
             self.args = args
+            self.kwargs = kwargs
             
         def start(self):
-            if self.args:
-                self.function(*self.args)
-            else:
-                self.function()
-                        
+            self.function(*self.args, **self.kwargs)
+            
+    #Player Movement Update
+    def player_movement(self):
+        #Check if key is pressed
+        keys = pygame.key.get_pressed()
+        keybinds = self.player["KEYBINDS"]
+        for keybind in keybinds:
+            if keys[keybinds[keybind].key]:
+                keybinds[keybind].start()
+
+        #Checking if Player is on the Screen
+        if self.player_surface.x > self.RESOLUTION[0]:
+            self.player_surface.x = self.RESOLUTION[0]
+        elif self.player_surface.x < 0:
+            self.player_surface.x = 0
+        if self.player_surface.y > self.RESOLUTION[1]:
+            self.player_surface.y = self.RESOLUTION[1]
+        elif self.player_surface.y < 0:
+            self.player_surface.y = 0
+                                             
+    #Setup Player
+    def setup_player(self):
+        #Initialize Player
+        self.player = {
+            "SURFACE": self.Surface(self.screen, (100,100), (self.screen_center["x"]-50, self.screen_center["y"]-50), (255,0,0)),
+            "SPEED": 30,
+            "KEYBINDS": {}
+        }
+        self.player_surface = self.player["SURFACE"]
+        player_speed = self.player["SPEED"]
+        
+        #Setup Keybinds
+        keys_to_bind = {
+            "PLAYER_UP": self.Keybind(pl.K_w, self.move_surface, (self.player_surface, "UP", player_speed)),
+            "PLAYER_DOWN": self.Keybind(pl.K_s, self.move_surface, (self.player_surface, "DOWN", player_speed)),
+            "PLAYER_LEFT": self.Keybind(pl.K_a, self.move_surface, (self.player_surface, "LEFT", player_speed)),
+            "PLAYER_RIGHT": self.Keybind(pl.K_d, self.move_surface, (self.player_surface, "RIGHT", player_speed)),
+            "TOGGLE_FPS": self.Keybind(pl.K_1, self.toggle_fps)
+        }
+        for key in keys_to_bind:
+            self.player["KEYBINDS"][key] = keys_to_bind[key]    
+                       
     #Event Loop
     def event_loop(self):
         for event in pygame.event.get():
@@ -150,32 +205,6 @@ class Game:
                     self.cursor["HOLD"] = False
                     self.cursor["HOLD_TIME"] = 0
                  
-            #Window Resize
-            if event.type == pl.VIDEORESIZE:
-                self.screen = pygame.display.set_mode(event.size, pl.RESIZABLE|pl.DOUBLEBUF|pl.HWSURFACE)
-                self.screen_center = {"x":self.screen.get_width()/2, "y":self.screen.get_height()/2}
-
-    #Player Movement Update
-    def player_movement(self):
-        keys = pygame.key.get_pressed()
-        for keybind in self.keybinds:
-            if keys[self.keybinds[keybind].key]:
-                self.keybinds[keybind].start()
-
-        #Checking if Player is on the Screen
-        if self.player["SURFACE"].x > self.RESOLUTION[0]:
-            self.player["SURFACE"].x = self.RESOLUTION[0]
-        elif self.player["SURFACE"].x < 0:
-            self.player["SURFACE"].x = 0
-        if self.player["SURFACE"].y > self.RESOLUTION[1]:
-            self.player["SURFACE"].y = self.RESOLUTION[1]
-        elif self.player["SURFACE"].y < 0:
-            self.player["SURFACE"].y = 0
-                 
-    #Track Mouse Holding
-    def mouse_holding(self):
-        return time() - self.cursor["HOLD_TIME"] if self.cursor["HOLD"] else self.cursor["HOLD_TIME"]
-                                 
     #Before Game Main Loop
     def before_loop(self):
         self.cursor = {
@@ -183,18 +212,7 @@ class Game:
             "HOLD": False,
             "HOLD_TIME": 0,
         }
-        
-        self.player = {
-            "SURFACE": self.Surface(self.screen, (100,100), (self.screen_center["x"]-50, self.screen_center["y"]-50), (255,0,0)),
-            "SPEED": 30,
-        }
-        
-        self.keybinds = {
-            "PLAYER_UP": self.Keybind(pl.K_w, self.move_surface, (self.player["SURFACE"], "UP", self.player["SPEED"])),
-            "PLAYER_DOWN": self.Keybind(pl.K_s, self.move_surface, (self.player["SURFACE"], "DOWN", self.player["SPEED"])),
-            "PLAYER_LEFT": self.Keybind(pl.K_a, self.move_surface, (self.player["SURFACE"], "LEFT", self.player["SPEED"])),
-            "PLAYER_RIGHT": self.Keybind(pl.K_d, self.move_surface, (self.player["SURFACE"], "RIGHT", self.player["SPEED"]))
-        } 
+        self.setup_player()
            
     #During Game Main Loop
     def during_loop(self):
@@ -203,13 +221,18 @@ class Game:
     
     #Update Priority: Lowest
     def low_update(self):
-        self.player["SURFACE"].update((self.player["SURFACE"].x, self.player["SURFACE"].y)) 
+        self.player_surface.update((self.player_surface.x, self.player_surface.y)) 
 
     #Update Priority: Medium
     def med_update(self):
         self.text_list([
-            f"FPS: {self.get_fps()}", 
+            f"FPS: {self.get_fps()}",
+            f"FPS Limit: {self.FPS}",
             f"Player Pos: {round(self.player['SURFACE'].x, 2)}, {round(self.player['SURFACE'].y, 2)}",
+            "",
+            f"Running for: {round(time() - START_TIME, 2)}",
+            "",
+            "1 - Change FPS Limit",
             ], x=10, y=10, size=25, center=False)
     
         self.text_list([
@@ -218,11 +241,7 @@ class Game:
             f"HOLD: {self.cursor['HOLD']}",
             f"HOLD_TIME: {round(self.mouse_holding(), 2)}",
             ], x=10, y=self.RESOLUTION[1]-120, size=25, center=False)
-    
-        self.text_list([
-            f"Running for: {round(time() - START_TIME, 2)}",
-        ], x=500, y=self.RESOLUTION[1]-120, size=25, center=False)
-    
+        
     #Update Priority: Highest
     def highest_update(self): 
         self.cursor["ICON"].update(self.get_mouse_pos())
